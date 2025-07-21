@@ -120,9 +120,9 @@ elif graphe == "Zéros de la fonction zêta de Riemann":
     # Préparation du graphique amélioré
     fig, ax = plt.subplots(figsize=(8,6))
     # Triviaux : points sur l'axe réel (toujours affichés)
-    ax.scatter(zeros_triviaux, [0]*len(zeros_triviaux), color='royalblue', label='Triviaux', s=80, marker='s', edgecolor='black', zorder=3)
+    ax.scatter(zeros_triviaux, [0]*len(zeros_triviaux), color='royalblue', label='Triviaux', s=120, marker='s', edgecolor='black', zorder=10)
     for x in zeros_triviaux:
-        ax.annotate(f"({x}, 0)", (x, 0), textcoords="offset points", xytext=(0,10), ha='center', fontsize=9, color='royalblue')
+        ax.annotate(f"({x}, 0)", (x, 0), textcoords="offset points", xytext=(0,10), ha='center', fontsize=10, color='royalblue', bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='none', alpha=0.8))
     # Non triviaux filtrés : points sur la droite critique
     ax.scatter([z.real for z in zeros_non_triviaux_filtrés], [z.imag for z in zeros_non_triviaux_filtrés], color='crimson', label='Non triviaux', s=80, marker='o', edgecolor='black', zorder=4)
     for z in zeros_non_triviaux_filtrés:
@@ -136,7 +136,10 @@ elif graphe == "Zéros de la fonction zêta de Riemann":
     ax.set_facecolor('#f7f7fa')
     # Limites du graphique
     ax.set_xlim(-40, 2)
-    ax.set_ylim(min(im_min, min(zeros_non_triviaux_im)-5), max(im_max, max(zeros_non_triviaux_im)+5))
+    # Forcer l'axe Y à inclure 0 pour voir les triviaux
+    y_min = min(im_min, min(zeros_non_triviaux_im)-5, -5)
+    y_max = max(im_max, max(zeros_non_triviaux_im)+5, 5)
+    ax.set_ylim(y_min, y_max)
     st.pyplot(fig)
 
     # Explications mathématiques
