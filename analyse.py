@@ -3,16 +3,24 @@ import os
 import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
+import riemann_viz
+MAGIC = b"PRIMEV2\x00"
 
-# Fonction pour lire les nombres premiers depuis le fichier binaire
 def lire_nombres_premiers(fichier):
     if not os.path.exists(fichier):
         st.error(f"Fichier '{fichier}' introuvable.")
-        return np.array([])
+        return np.array([], dtype=np.uint64)
     with open(fichier, "rb") as f:
+        header = f.read(8)
+        if header == MAGIC:
+            return np.frombuffer(f.read(), dtype="<u8")
+        f.seek(0)
         data = f.read()
-        count = len(data) // 4  # 4 octets par entier
-        return np.array(struct.unpack(f'<{count}I', data), dtype=np.uint64)
+    if len(data) % 4 != 0:
+        st.error("Format de fichier invalide.")
+        return np.array([], dtype=np.uint64)
+    count = len(data) // 4
+    return np.array(struct.unpack(f"<{count}I", data), dtype=np.uint64)
 
 # Lecture des nombres premiers
 data_file = "nombres_premiers.bin"
@@ -85,77 +93,76 @@ elif graphe == "Espacement entre premiers":
         st.pyplot(fig)
 elif graphe == "Zéros de la fonction zêta de Riemann":
     st.markdown("""
-    **Zéros triviaux** : -2, -4, -6, ... (nombres pairs négatifs)
-    
-    **Zéros non triviaux** : zéros sur la droite critique Re(s) = 1/2 (conjecture de Riemann)
-    """)
-    # Zéros triviaux
-    zeros_triviaux = np.arange(-2, -40, -2)
-    # Zéros non triviaux connus (20 premiers, partie imaginaire)
-    zeros_non_triviaux_im = [14.134725, 21.022040, 25.010858, 30.424876, 32.935062,
-        37.586178, 40.918719, 43.327073, 48.005150, 49.773832,
-        52.970321, 56.446247, 59.347044, 60.831780, 65.112544,
-        67.079811, 69.546402, 72.067158, 75.704690, 77.144840]
-    zeros_non_triviaux = [0.5 + 1j*y for y in zeros_non_triviaux_im]
+    **Zéros triviaux** : entiers pairs négatifs sur l'axe réel.
 
-    # Sélection de l'intervalle d'ordonnée (Im(s))
-    st.write("Filtrer les zéros non triviaux selon l'ordonnée Im(s) : (seuls les 20 premiers zéros non triviaux sont disponibles)")
+    **Zéros non triviaux** : conjecturés sur la droite critique Re(s) = 1/2 (hypothèse de Riemann).
+    """)
+
     col1, col2 = st.columns(2)
     with col1:
-        im_min = st.number_input("Im(s) min", value=float(min(zeros_non_triviaux_im)), step=1.0, key="im_min")
+        im_min = st.number_input(
+            "Im(s) min",
+            value=float(min(riemann_viz.ZEROS_NON_TRIVIAUX_IM)),
+            step=1.0,
+            key="im_min",
+        )
     with col2:
-        im_max = st.number_input("Im(s) max", value=float(max(zeros_non_triviaux_im)), step=1.0, key="im_max")
+        im_max = st.number_input(
+            "Im(s) max",
+            value=float(max(riemann_viz.ZEROS_NON_TRIVIAUX_IM)),
+            step=1.0,
+            key="im_max",
+        )
+
+    nb_triviaux = st.slider("Nombre de zéros triviaux affichés", 5, 30, 20, key="nb_triviaux")
+
     if im_min > im_max:
         st.warning("Im(s) min doit être ≤ Im(s) max.")
-    # Filtrage des zéros non triviaux
-    zeros_non_triviaux_filtrés = [z for z in zeros_non_triviaux if im_min <= z.imag <= im_max]
+    else:
+        non_triviaux = riemann_viz.zeros_non_triviaux(im_min, im_max)
+        st.write(
+            f"Zéros non triviaux dans l'intervalle : **{len(non_triviaux)}** "
+            f"/ {len(riemann_viz.ZEROS_NON_TRIVIAUX_IM)}"
+        )
 
-    # Affichage des coordonnées
-    with st.expander("Voir les coordonnées des zéros"):
-        st.markdown("**Zéros triviaux** (Re(s), Im(s)) :")
-        st.write([ (float(x), 0.0) for x in zeros_triviaux ])
-        st.markdown("**Zéros non triviaux** (Re(s), Im(s)) :")
-        st.write([ (z.real, z.imag) for z in zeros_non_triviaux_filtrés ])
+        with st.expander("Voir les coordonnées des zéros"):
+            triviaux = riemann_viz.zeros_triviaux(nb_triviaux)
+            st.markdown("**Zéros triviaux** (Re(s), Im(s)) :")
+            st.write([(float(x), 0.0) for x in triviaux])
+            st.markdown("**Zéros non triviaux** (Re(s), Im(s), rang) :")
+            st.write([(z[0], z[1], z[2]) for z in non_triviaux])
 
-    # Préparation du graphique amélioré
-    fig, ax = plt.subplots(figsize=(8,6))
-    # Triviaux : points sur l'axe réel (toujours affichés)
-    ax.scatter(zeros_triviaux, [0]*len(zeros_triviaux), color='royalblue', label='Triviaux', s=120, marker='s', edgecolor='black', zorder=10)
-    for x in zeros_triviaux:
-        ax.annotate(f"({x}, 0)", (x, 0), textcoords="offset points", xytext=(0,10), ha='center', fontsize=10, color='royalblue', bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='none', alpha=0.8))
-    # Non triviaux filtrés : points sur la droite critique
-    ax.scatter([z.real for z in zeros_non_triviaux_filtrés], [z.imag for z in zeros_non_triviaux_filtrés], color='crimson', label='Non triviaux', s=80, marker='o', edgecolor='black', zorder=4)
-    for z in zeros_non_triviaux_filtrés:
-        ax.annotate(f"({z.real:.1f}, {z.imag:.2f})", (z.real, z.imag), textcoords="offset points", xytext=(10,0), ha='left', fontsize=9, color='crimson')
-    ax.axvline(0.5, color='gray', linestyle='--', alpha=0.5, label='Droite critique Re(s)=1/2', zorder=1)
-    ax.set_xlabel('Re(s)', fontsize=13)
-    ax.set_ylabel('Im(s)', fontsize=13)
-    ax.set_title('Zéros triviaux et non triviaux de la fonction zêta de Riemann', fontsize=15, pad=15)
-    ax.legend(fontsize=12)
-    ax.grid(True, alpha=0.3, linestyle=':')
-    ax.set_facecolor('#f7f7fa')
-    # Limites du graphique
-    ax.set_xlim(-40, 2)
-    # Forcer l'axe Y à inclure 0 pour voir les triviaux
-    y_min = min(im_min, min(zeros_non_triviaux_im)-5, -5)
-    y_max = max(im_max, max(zeros_non_triviaux_im)+5, 5)
-    ax.set_ylim(y_min, y_max)
-    st.pyplot(fig)
+        tab_2d, tab_3d = st.tabs(["Visualisation 2D", "Visualisation 3D"])
 
-    # Explications mathématiques
-    st.markdown("""
-    ---
-    ### À propos de la fonction zêta de Riemann
-    La fonction zêta de Riemann \(\zeta(s)\) est définie pour \(\mathrm{Re}(s) > 1\) par la série :
-    \[ \zeta(s) = \sum_{n=1}^{\infty} \frac{1}{n^s} \]
-    Elle admet un prolongement analytique sur \(\mathbb{C} \setminus \{1\}\).
-    
-    - **Zéros triviaux** : ce sont les entiers pairs négatifs \(-2, -4, -6, \ldots\)
-    - **Zéros non triviaux** : conjecturés tous sur la droite \(\mathrm{Re}(s) = 1/2\) (conjecture de Riemann)
-    - **Conjecture de Riemann** : tous les zéros non triviaux de \(\zeta(s)\) ont une partie réelle égale à 1/2.
-    
-    Les zéros non triviaux sont fondamentaux en théorie des nombres, notamment pour la répartition des nombres premiers.
-    """)
+        with tab_2d:
+            animer = st.checkbox("Animation progressive des zéros non triviaux", value=False, key="anim_2d")
+            fig_2d = riemann_viz.figure_2d(im_min, im_max, nb_triviaux, animer=animer)
+            st.plotly_chart(fig_2d, use_container_width=True)
+            st.caption(
+                "Plan complexe : carrés bleus = zéros triviaux, points colorés = zéros non triviaux "
+                "sur la droite critique. La couleur indique le rang du zéro."
+            )
+
+        with tab_3d:
+            fig_3d = riemann_viz.figure_3d(im_min, im_max, nb_triviaux)
+            st.plotly_chart(fig_3d, use_container_width=True)
+            st.caption(
+                "Vue 3D interactive : faites pivoter avec la souris. "
+                "L'axe vertical (rang n) montre l'ordre des zéros non triviaux."
+            )
+
+        st.markdown("""
+        ---
+        ### À propos de la fonction zêta de Riemann
+        La fonction zêta de Riemann \(\zeta(s)\) est définie pour \(\mathrm{Re}(s) > 1\) par :
+        \[ \zeta(s) = \sum_{n=1}^{\infty} \frac{1}{n^s} \]
+
+        - **Zéros triviaux** : \(-2, -4, -6, \ldots\)
+        - **Zéros non triviaux** : conjecturés sur \(\mathrm{Re}(s) = \frac{1}{2}\)
+        - **Hypothèse de Riemann** : tous les zéros non triviaux ont \(\mathrm{Re}(s) = \frac{1}{2}\)
+
+        Ces zéros sont liés à la répartition des nombres premiers.
+        """)
 elif graphe == "Affichage des entiers et des nombres premiers":
     st.markdown("""
     Affiche tous les entiers dans l'intervalle choisi, les nombres premiers sont en <span style='color:red'>rouge</span>.
@@ -192,4 +199,4 @@ elif graphe == "Affichage des entiers et des nombres premiers":
         html += "</div>"
         st.markdown(html, unsafe_allow_html=True)
 
-st.info("Lancez ce dashboard avec :\n\n    streamlit run analyse.py\n\nDépendances : streamlit, matplotlib, numpy") 
+st.info("Lancez ce dashboard avec :\n\n    python -m streamlit run analyse.py\n\nDépendances : streamlit, matplotlib, numpy, plotly") 
