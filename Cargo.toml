@@ -1,0 +1,27 @@
+[package]
+name = "riemann-dashboard"
+version = "0.1.0"
+edition = "2021"
+description = "Dashboard des nombres premiers et des zeros de Riemann"
+authors = ["Louis"]
+
+[[bin]]
+name = "riemann-dashboard"
+path = "src/main.rs"
+
+[lib]
+name = "riemann_dashboard"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+eframe = { version = "0.30", default-features = true }
+egui = "0.30"
+egui_plot = "0.30"
+memmap2 = "0.9"
+rfd = "0.15"
+
+[profile.release]
+lto = true
+codegen-units = 1

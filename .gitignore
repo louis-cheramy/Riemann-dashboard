@@ -1,1 +1,12 @@
+# Donnees generees
 nombres_premiers.bin
+test_primes.bin
+
+# Rust / Cargo (build, deps, cache)
+/target/
+**/*.rs.bk
+*.pdb
+
+# Fichiers temporaires
+*.tmp
+*.log

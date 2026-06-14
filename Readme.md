@@ -1,80 +1,119 @@
-# Riemann Dashboard
+# Riemann Dashboard (Rust)
 
-Dashboard interactif pour explorer la répartition des nombres premiers et visualiser les zéros de la fonction zêta de Riemann.
+Application desktop native pour explorer la repartition des nombres premiers et visualiser les zeros de la fonction zeta de Riemann (hypothese de Riemann).
 
-## Vue d'ensemble
+## Fonctionnalites
 
-Le projet se compose de deux scripts Python :
+- **Generation** de tous les nombres premiers jusqu'a une borne (crible segmente, format `PRIMEV2` uint64)
+- **Histogramme** de repartition sur un intervalle
+- **Espacements** entre nombres premiers consecutifs
+- **Zeros de Riemann** en 2D (Plot interactif) et 3D (rotation souris + zoom)
+- **Affichage des entiers** avec les premiers en rouge
+- Lecture memoire mappee du fichier `.bin` (supporte des centaines de millions de premiers)
 
-| Fichier | Rôle |
-|---------|------|
-| `premier.py` | Génère tous les nombres premiers jusqu'à une borne choisie et les enregistre dans `nombres_premiers.bin` |
-| `analyse.py` | Application Streamlit qui lit ce fichier binaire et affiche des graphiques interactifs |
+## Prerequis (Windows)
 
-Les nombres premiers sont stockés en binaire (8 octets par entier, format `uint64` little-endian, en-tête `PRIMEV2`). Cela permet de dépasser la limite des 4,3 milliards imposée par l'ancien format 32 bits. Le fichier `nombres_premiers.bin` n'est pas versionné (voir `.gitignore`) : il doit être généré localement avant de lancer le dashboard.
+1. **Rust** : https://rustup.rs/
+   ```powershell
+   winget install Rustlang.Rustup
+   ```
+2. **Visual Studio Build Tools** (linker MSVC requis pour compiler sur Windows) :
+   ```powershell
+   winget install Microsoft.VisualStudio.2022.BuildTools
+   ```
+   Cochez **« Developpement Desktop en C++ »** ou **VC++ Build Tools** lors de l'installation.
 
-> **Note :** si vous aviez un fichier généré avec l'ancienne version, supprimez-le et relancez `python premier.py`.
+Redemarrez le terminal apres l'installation.
 
-## Prérequis
+## Compilation
 
-- Python 3.8 ou supérieur
-- Les dépendances suivantes :
-
-```bash
-pip install streamlit matplotlib numpy plotly
+```powershell
+cd Riemann-dashboard
+cargo build --release
 ```
 
-## Installation
+L'executable se trouve ici :
 
-1. Cloner ou télécharger le dépôt.
-2. Installer les dépendances (voir ci-dessus).
-3. Générer le fichier de données (étape obligatoire la première fois).
-
-## Étape 1 — Générer les nombres premiers
-
-Lancer le script de crible segmenté :
-
-```bash
-python premier.py
+```
+target\release\riemann-dashboard.exe
 ```
 
-Le programme demande une borne maximale (ex. `10000000000` pour 10 milliards). Le calcul peut prendre longtemps selon la borne et la machine (plusieurs heures pour 10¹⁰). À la fin, un fichier `nombres_premiers.bin` est créé à la racine du projet (~3,6 Go pour 10 milliards).
+## Utilisation
 
-## Étape 2 — Lancer le dashboard
+### Interface graphique (par defaut)
 
-```bash
-python -m streamlit run analyse.py
+```powershell
+.\target\release\riemann-dashboard.exe
 ```
 
-Streamlit ouvre automatiquement le dashboard dans le navigateur (par défaut sur `http://localhost:8501`).
+ou :
 
-## Fonctionnalités du dashboard
+```powershell
+cargo run --release
+```
 
-Une fois lancé, `analyse.py` propose :
+Placez `nombres_premiers.bin` dans le meme dossier que l'exe, ou generez-le depuis le panneau lateral de l'application.
 
-- **Histogramme (répartition)** — distribution des nombres premiers sur un intervalle choisi
-- **Espacement entre premiers** — histogramme des écarts entre nombres premiers consécutifs
-- **Zéros de la fonction zêta de Riemann** — visualisation interactive 2D et 3D (Plotly) des zéros triviaux et non triviaux, avec animation optionnelle
-- **Affichage des entiers et des nombres premiers** — liste des entiers d'un intervalle, avec les premiers en rouge
+### Ligne de commande — generation des premiers
 
-Des champs permettent de définir l'intervalle d'analyse (borne min / max) et d'ajuster les paramètres des graphiques.
+```powershell
+.\target\release\riemann-dashboard.exe generate 10000000000
+```
+
+Options :
+
+```powershell
+riemann-dashboard generate --help
+```
+
+## Distribution / installation
+
+Copiez ces fichiers sur la machine cible :
+
+- `riemann-dashboard.exe` (depuis `target\release\`)
+- `nombres_premiers.bin` (optionnel, ~3,6 Go pour 10 milliards)
+
+Aucune installation de Python n'est requise. L'application est autonome.
+
+Pour un installateur Windows (`.msi`), vous pouvez utiliser [cargo-wix](https://github.com/volks73/cargo-wix) ou [NSIS](https://nsis.sourceforge.io/).
+
+## Format du fichier binaire
+
+| Element | Detail |
+|---------|--------|
+| En-tete | `PRIMEV2\x00` (8 octets) |
+| Donnees | entiers `uint64` little-endian (8 octets chacun) |
+| Compatibilite | ancien format uint32 (sans en-tete) toujours lisible |
 
 ## Structure du projet
 
 ```
 Riemann-dashboard/
-├── premier.py              # Génération du fichier binaire de premiers
-├── analyse.py              # Dashboard Streamlit
-├── riemann_viz.py          # Visualisations 2D/3D des zéros de Riemann
-├── nombres_premiers.bin    # Données générées (non versionné)
-└── Readme.md
+├── Cargo.toml
+├── src/
+│   ├── main.rs           # CLI + lancement GUI
+│   ├── lib.rs
+│   ├── primes/           # Crible + lecture mmap
+│   ├── riemann/          # Zeros triviaux / non triviaux
+│   └── app/              # Interface egui
+├── python/               # Ancienne version Python (legacy)
+└── nombres_premiers.bin  # Donnees (non versionne)
 ```
 
-## Dépannage
+## Version Python (legacy)
 
-| Problème | Solution |
+L'ancienne version Streamlit est conservee dans `python/` :
+
+```powershell
+pip install streamlit matplotlib numpy plotly
+python -m streamlit run python/analyse.py
+```
+
+## Depannage
+
+| Probleme | Solution |
 |----------|----------|
-| `Fichier 'nombres_premiers.bin' introuvable` | Exécuter d'abord `python premier.py` |
-| `struct.error: 'I' format requires...` ou fichier incomplet | Supprimer `nombres_premiers.bin` et relancer `python premier.py` (ancien format 32 bits) |
-| `streamlit` introuvable | Installer avec `pip install streamlit` ou utiliser `python -m streamlit run analyse.py` |
-| Intervalle trop petit (espacements) | Choisir un intervalle contenant au moins deux nombres premiers |
+| `link.exe not found` | Installer Visual Studio Build Tools (C++) |
+| `rustc` introuvable | Installer Rust via rustup, redemarrer le terminal |
+| Fichier `.bin` introuvable | `riemann-dashboard generate 1000000` ou generer depuis l'GUI |
+| Application lente au demarrage | Normal avec un fichier de 3+ Go ; le mmap evite de tout charger en RAM |
