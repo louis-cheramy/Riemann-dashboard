@@ -9,7 +9,7 @@ use egui::{Color32, RichText};
 
 use crate::app::plots::{self, Plot3DState};
 use crate::primes::{generate_primes, PrimeStore, SegmentProgress, DEFAULT_PRIME_FILE, resolve_prime_path};
-use crate::riemann::{non_trivial_zeros, trivial_zeros, NON_TRIVIAL_IMAG_PARTS};
+use crate::riemann::{default_im_range, non_trivial_zeros, trivial_zeros};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum GraphKind {
@@ -77,6 +77,7 @@ impl DashboardApp {
             (2, 100_002, 2, 102)
         };
 
+        let (default_im_min, default_im_max) = default_im_range();
         Self {
             prime_path,
             store,
@@ -86,8 +87,8 @@ impl DashboardApp {
             graph: GraphKind::Histogram,
             bins: 50,
             spacing_bins: 30,
-            im_min: NON_TRIVIAL_IMAG_PARTS[0],
-            im_max: *NON_TRIVIAL_IMAG_PARTS.last().unwrap(),
+            im_min: default_im_min,
+            im_max: default_im_max,
             nb_trivial: 20,
             riemann_tab_3d: false,
             animate_2d: false,
@@ -266,7 +267,7 @@ impl DashboardApp {
     }
 
     fn show_riemann(&mut self, ui: &mut egui::Ui) {
-        ui.label("Zeros triviaux : entiers pairs negatifs. Non triviaux : Re(s)=1/2.");
+        ui.label("Zeros triviaux : entiers pairs negatifs. Non triviaux : Re(s)=1/2 (calcules via Z de Hardy).");
         ui.horizontal(|ui| {
             ui.add(egui::DragValue::new(&mut self.im_min).speed(0.5).prefix("Im min: "));
             ui.add(egui::DragValue::new(&mut self.im_max).speed(0.5).prefix("Im max: "));
@@ -279,11 +280,7 @@ impl DashboardApp {
         }
 
         let nt = non_trivial_zeros(self.im_min, self.im_max);
-        ui.label(format!(
-            "Zeros non triviaux : {} / {}",
-            nt.len(),
-            NON_TRIVIAL_IMAG_PARTS.len()
-        ));
+        ui.label(format!("Zeros non triviaux dans l'intervalle : {}", nt.len()));
 
         ui.horizontal(|ui| {
             if ui.selectable_label(!self.riemann_tab_3d, "2D").clicked() {

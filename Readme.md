@@ -96,17 +96,7 @@ Riemann-dashboard/
 │   ├── primes/           # Crible + lecture mmap
 │   ├── riemann/          # Zeros triviaux / non triviaux
 │   └── app/              # Interface egui
-├── python/               # Ancienne version Python (legacy)
 └── nombres_premiers.bin  # Donnees (non versionne)
-```
-
-## Version Python (legacy)
-
-L'ancienne version Streamlit est conservee dans `python/` :
-
-```powershell
-pip install streamlit matplotlib numpy plotly
-python -m streamlit run python/analyse.py
 ```
 
 ## Depannage
