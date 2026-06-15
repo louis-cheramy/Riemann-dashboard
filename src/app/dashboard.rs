@@ -8,8 +8,9 @@ use egui_plot::{Bar, BarChart, Legend, Plot};
 use egui::{Color32, RichText};
 
 use crate::app::plots::{self, Plot3DState};
+use crate::app::riemann_viz::{self, HeatmapCache};
 use crate::primes::{generate_primes, PrimeStore, SegmentProgress, DEFAULT_PRIME_FILE, resolve_prime_path};
-use crate::riemann::{default_im_range, non_trivial_zeros, trivial_zeros};
+use crate::riemann::{default_im_range, non_trivial_zeros};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum GraphKind {
@@ -17,6 +18,16 @@ enum GraphKind {
     Spacing,
     Riemann,
     IntegerDisplay,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RiemannView {
+    Explorer,
+    Spacings,
+    Density,
+    Primes,
+    Classic2d,
+    Classic3d,
 }
 
 enum GenerateMsg {
@@ -39,11 +50,15 @@ pub struct DashboardApp {
     im_min: f64,
     im_max: f64,
     nb_trivial: u32,
-    riemann_tab_3d: bool,
+    riemann_view: RiemannView,
     animate_2d: bool,
     anim_index: usize,
     anim_last: Instant,
     plot3d: Plot3DState,
+    heatmap_cache: Option<HeatmapCache>,
+    show_zero_labels: bool,
+    color_zeros_by_derivative: bool,
+    primes_link_max: u64,
 
     // Integer display
     display_min: u64,
@@ -90,11 +105,15 @@ impl DashboardApp {
             im_min: default_im_min,
             im_max: default_im_max,
             nb_trivial: 20,
-            riemann_tab_3d: false,
+            riemann_view: RiemannView::Explorer,
             animate_2d: false,
             anim_index: 0,
             anim_last: Instant::now(),
             plot3d: Plot3DState::default(),
+            heatmap_cache: None,
+            show_zero_labels: true,
+            color_zeros_by_derivative: true,
+            primes_link_max: 10_000,
             display_min,
             display_max,
             gen_limit_str: "1000000".into(),
@@ -267,12 +286,26 @@ impl DashboardApp {
     }
 
     fn show_riemann(&mut self, ui: &mut egui::Ui) {
-        ui.label("Zeros triviaux : entiers pairs negatifs. Non triviaux : Re(s)=1/2 (calcules via Z de Hardy).");
+        ui.label(
+            "Fonction zeta de Riemann : zeros triviaux (entiers pairs negatifs) et non triviaux sur Re(s)=1/2.",
+        );
+        ui.label(
+            egui::RichText::new("Hypothese de Riemann : tous les zeros non triviaux ont Re(s) = 1/2.")
+                .italics()
+                .color(Color32::from_rgb(147, 197, 253)),
+        );
+
+        let prev_im = (self.im_min, self.im_max);
         ui.horizontal(|ui| {
             ui.add(egui::DragValue::new(&mut self.im_min).speed(0.5).prefix("Im min: "));
             ui.add(egui::DragValue::new(&mut self.im_max).speed(0.5).prefix("Im max: "));
             ui.add(egui::Slider::new(&mut self.nb_trivial, 5..=30).text("Triviaux"));
         });
+        if (self.im_min, self.im_max) != prev_im {
+            if let Some(cache) = &mut self.heatmap_cache {
+                cache.invalidate();
+            }
+        }
 
         if self.im_min > self.im_max {
             ui.colored_label(Color32::RED, "Im min doit etre <= Im max.");
@@ -280,47 +313,115 @@ impl DashboardApp {
         }
 
         let nt = non_trivial_zeros(self.im_min, self.im_max);
-        ui.label(format!("Zeros non triviaux dans l'intervalle : {}", nt.len()));
+        ui.horizontal(|ui| {
+            ui.label(format!("{} zeros non triviaux calcules", nt.len()));
+            ui.checkbox(&mut self.show_zero_labels, "Numeroter gamma_n");
+            ui.checkbox(&mut self.color_zeros_by_derivative, "Couleur |zeta'|");
+            ui.checkbox(&mut self.animate_2d, "Animation");
+        });
 
         ui.horizontal(|ui| {
-            if ui.selectable_label(!self.riemann_tab_3d, "2D").clicked() {
-                self.riemann_tab_3d = false;
-            }
-            if ui.selectable_label(self.riemann_tab_3d, "3D").clicked() {
-                self.riemann_tab_3d = true;
-            }
+            ui.selectable_value(&mut self.riemann_view, RiemannView::Explorer, "Explorateur");
+            ui.selectable_value(&mut self.riemann_view, RiemannView::Spacings, "Espacements GUE");
+            ui.selectable_value(&mut self.riemann_view, RiemannView::Density, "Densite N(T)");
+            ui.selectable_value(&mut self.riemann_view, RiemannView::Primes, "Lien premiers");
+            ui.selectable_value(&mut self.riemann_view, RiemannView::Classic2d, "Plan 2D");
+            ui.selectable_value(&mut self.riemann_view, RiemannView::Classic3d, "Plan 3D");
         });
 
-        if self.riemann_tab_3d {
-            plots::riemann_plot_3d(ui, &mut self.plot3d, self.im_min, self.im_max, self.nb_trivial);
-        } else {
-            ui.checkbox(&mut self.animate_2d, "Animation progressive");
-            let anim = if self.animate_2d {
-                if self.anim_last.elapsed() > Duration::from_millis(350) {
-                    self.anim_index = (self.anim_index + 1).min(nt.len());
-                    self.anim_last = Instant::now();
-                }
-                if self.anim_index >= nt.len() && !nt.is_empty() {
-                    self.anim_index = 0;
-                }
-                Some(self.anim_index.max(1))
-            } else {
+        ui.separator();
+
+        let anim = if self.animate_2d && !nt.is_empty() {
+            if self.anim_last.elapsed() > Duration::from_millis(400) {
+                self.anim_index = (self.anim_index + 1).min(nt.len());
+                self.anim_last = Instant::now();
+            }
+            if self.anim_index >= nt.len() {
                 self.anim_index = 0;
-                None
-            };
-            plots::riemann_plot_2d(ui, self.im_min, self.im_max, self.nb_trivial, anim);
-        }
+            }
+            Some(self.anim_index.max(1))
+        } else {
+            self.anim_index = 0;
+            None
+        };
 
-        egui::CollapsingHeader::new("Coordonnees").show(ui, |ui| {
-            ui.label("Triviaux :");
-            for t in trivial_zeros(self.nb_trivial) {
-                ui.monospace(format!("({t}, 0)"));
+        match self.riemann_view {
+            RiemannView::Explorer => {
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new("Carte log|zeta(s)| — phase arg(zeta)").strong());
+                        riemann_viz::heatmap_explorer(
+                            ui,
+                            &mut self.heatmap_cache,
+                            self.im_min,
+                            self.im_max,
+                            &nt,
+                            anim,
+                            self.show_zero_labels,
+                            self.color_zeros_by_derivative,
+                        );
+                    });
+                    ui.add_space(12.0);
+                    ui.vertical(|ui| {
+                        ui.set_max_width(340.0);
+                        ui.label(egui::RichText::new("Espacements normalises vs GUE").strong());
+                        riemann_viz::spacing_gue_plot(ui, &nt);
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new("Densite des zeros").strong());
+                        riemann_viz::zero_density_plot(ui, &nt, self.im_max);
+                    });
+                });
+                ui.add_space(8.0);
+                egui::CollapsingHeader::new("Table des zeros (gamma_n, |zeta'|, espacements)")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        let visible = anim.unwrap_or(nt.len());
+                        riemann_viz::zeros_table(ui, &nt, visible);
+                    });
             }
-            ui.label("Non triviaux :");
-            for z in &nt {
-                ui.monospace(format!("({}, {}, n={})", z.re, z.im, z.rank));
+            RiemannView::Spacings => {
+                ui.label("Les espacements entre zeros suivent la distribution GUE (matrices hermitiennes aleatoires).");
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new("Histogramme vs Wigner surmise").strong());
+                        riemann_viz::spacing_gue_plot(ui, &nt);
+                    });
+                    ui.add_space(16.0);
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new("Suite gamma_{n+1} - gamma_n").strong());
+                        riemann_viz::spacing_sequence_plot(ui, &nt);
+                    });
+                });
+                riemann_viz::zeros_table(ui, &nt, nt.len());
             }
-        });
+            RiemannView::Density => {
+                ui.label("Comparaison du nombre reel de zeros avec la formule asymptotique N(T) ~ T/2pi ln(T/2pi) - T/2pi.");
+                riemann_viz::zero_density_plot(ui, &nt, self.im_max);
+                ui.add_space(8.0);
+                riemann_viz::spacing_sequence_plot(ui, &nt);
+            }
+            RiemannView::Primes => {
+                ui.label(
+                    "Les oscillations de pi(x) - Li(x) encodent l'information des zeros de zeta (formule explicite).",
+                );
+                if let Some(store) = &self.store {
+                    ui.add(
+                        egui::Slider::new(&mut self.primes_link_max, 500..=50_000)
+                            .logarithmic(true)
+                            .text("Borne x"),
+                    );
+                    riemann_viz::primes_connection_plot(ui, store, self.primes_link_max);
+                } else {
+                    ui.colored_label(Color32::YELLOW, "Chargez un fichier de nombres premiers.");
+                }
+            }
+            RiemannView::Classic2d => {
+                plots::riemann_plot_2d(ui, self.im_min, self.im_max, self.nb_trivial, anim);
+            }
+            RiemannView::Classic3d => {
+                plots::riemann_plot_3d(ui, &mut self.plot3d, self.im_min, self.im_max, self.nb_trivial);
+            }
+        }
     }
 
     fn show_integers(&mut self, ui: &mut egui::Ui) {
@@ -369,7 +470,7 @@ impl eframe::App for DashboardApp {
         if self.gen_running {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
-        if self.animate_2d && self.graph == GraphKind::Riemann && !self.riemann_tab_3d {
+        if self.animate_2d && self.graph == GraphKind::Riemann {
             ctx.request_repaint_after(Duration::from_millis(350));
         }
 

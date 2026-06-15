@@ -19,6 +19,73 @@ fn borwein_terms(t: f64) -> usize {
     30.max((t / 2.5) as usize + 25)
 }
 
+fn borwein_terms_general(sigma: f64, t: f64) -> usize {
+    borwein_terms(t + (0.5 - sigma).abs() * 35.0)
+}
+
+fn eta_complex(sigma: f64, t: f64) -> (f64, f64) {
+    let n = borwein_terms_general(sigma, t);
+    let coeffs = borwein_coefficients(n);
+    let dn = coeffs[n];
+
+    let mut re_eta = 0.0;
+    let mut im_eta = 0.0;
+    for k in 0..n {
+        let c = if k % 2 == 0 { 1.0 } else { -1.0 } * (coeffs[k] - coeffs[n]);
+        let base = k as f64 + 1.0;
+        let mag = base.powf(-sigma);
+        let angle = -t * base.ln();
+        re_eta += c * mag * angle.cos();
+        im_eta += c * mag * angle.sin();
+    }
+    re_eta /= -dn;
+    im_eta /= -dn;
+    (re_eta, im_eta)
+}
+
+/// ζ(s) pour s = σ + it, Re(s) > 0.
+pub fn zeta_complex(sigma: f64, t: f64) -> (f64, f64) {
+    if (sigma - 0.5).abs() < 1e-12 {
+        return zeta_on_critical_line(t);
+    }
+
+    let (re_eta, im_eta) = eta_complex(sigma, t);
+    let ln2 = 2.0_f64.ln();
+    let pow_re = 2.0_f64.powf(1.0 - sigma);
+    let angle = -t * ln2;
+    let two_re = pow_re * angle.cos();
+    let two_im = pow_re * angle.sin();
+
+    let denom_re = 1.0 - two_re;
+    let denom_im = -two_im;
+    let denom_norm = denom_re * denom_re + denom_im * denom_im;
+
+    (
+        (re_eta * denom_re + im_eta * denom_im) / denom_norm,
+        (im_eta * denom_re - re_eta * denom_im) / denom_norm,
+    )
+}
+
+pub fn zeta_log_magnitude(sigma: f64, t: f64) -> f64 {
+    let (re, im) = zeta_complex(sigma, t);
+    (re * re + im * im).sqrt().max(1e-300).ln()
+}
+
+pub fn zeta_phase(sigma: f64, t: f64) -> f64 {
+    let (re, im) = zeta_complex(sigma, t);
+    im.atan2(re)
+}
+
+/// |ζ'(1/2 + it)| par différences finies.
+pub fn zeta_derivative_magnitude_on_critical(t: f64) -> f64 {
+    let h = 1e-5;
+    let (z0r, z0i) = zeta_on_critical_line(t);
+    let (z1r, z1i) = zeta_on_critical_line(t + h);
+    let dr = (z1r - z0r) / h;
+    let di = (z1i - z0i) / h;
+    (dr * dr + di * di).sqrt()
+}
+
 /// Riemann-Siegel theta function θ(t), asymptotic expansion.
 pub fn riemann_siegel_theta(t: f64) -> f64 {
     0.5 * t * (t / (2.0 * PI)).ln()
